@@ -46,7 +46,9 @@ func (c *RefactorContext) CodeActionTriggerKind() *lsproto.CodeActionTriggerKind
 	return c.Params.Context.TriggerKind
 }
 
-var refactorProviders = []*RefactorProvider{}
+var refactorProviders = []*RefactorProvider{
+	InferReturnTypeProvider,
+}
 
 // provideRefactorActions adds contextual (non-diagnostic-driven) refactoring code actions for the given range.
 func (l *LanguageService) provideRefactorActions(ctx context.Context, params *lsproto.CodeActionParams, program *compiler.Program, file *ast.SourceFile, actions *[]lsproto.CommandOrCodeAction) error {

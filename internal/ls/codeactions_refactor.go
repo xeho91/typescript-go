@@ -47,6 +47,7 @@ func (c *RefactorContext) CodeActionTriggerKind() *lsproto.CodeActionTriggerKind
 }
 
 var refactorProviders = []*RefactorProvider{
+	ExtractTypeProvider,
 	InferReturnTypeProvider,
 }
 

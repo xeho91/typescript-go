@@ -30,6 +30,11 @@ func GetTouchingToken(sourceFile *ast.SourceFile, position int) *ast.Node {
 	return getTokenAtPosition(sourceFile, position, false /*allowPositionInLeadingTrivia*/, nil)
 }
 
+// GetTouchingTokenIncludingPreceding is like GetTouchingToken, but also returns a token that ends exactly at the given position.
+func GetTouchingTokenIncludingPreceding(sourceFile *ast.SourceFile, position int) *ast.Node {
+	return getTokenAtPosition(sourceFile, position, false /*allowPositionInLeadingTrivia*/, func(*ast.Node) bool { return true })
+}
+
 func GetTokenAtPosition(sourceFile *ast.SourceFile, position int) *ast.Node {
 	return getTokenAtPosition(sourceFile, position, true /*allowPositionInLeadingTrivia*/, nil)
 }

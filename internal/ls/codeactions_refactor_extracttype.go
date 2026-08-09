@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"slices"
+	"strings"
 
 	"github.com/microsoft/typescript-go/internal/ast"
 	"github.com/microsoft/typescript-go/internal/astnav"
@@ -136,7 +137,7 @@ func buildTypeAliasAction(ctx context.Context, refactorContext *RefactorContext,
 	changeTracker.InsertNodeBefore(file, info.enclosingNode, typeAlias, true, change.LeadingTriviaOptionNone)
 	replaceSelectionWithTypeReference(changeTracker, file, info, name)
 
-	return finalizeCodeAction(changeTracker, file, title, extractToTypeAliasActionKind)
+	return finalizeCodeAction(refactorContext.LS, changeTracker, file, name, title, extractToTypeAliasActionKind)
 }
 
 func buildInterfaceAction(ctx context.Context, refactorContext *RefactorContext, info *extractTypeInfo, formatOptions lsutil.FormatCodeSettings) *CodeAction {
@@ -157,7 +158,7 @@ func buildInterfaceAction(ctx context.Context, refactorContext *RefactorContext,
 	changeTracker.InsertNodeBefore(file, info.enclosingNode, interface_, true, change.LeadingTriviaOptionNone)
 	replaceSelectionWithTypeReference(changeTracker, file, info, name)
 
-	return finalizeCodeAction(changeTracker, file, title, extractToInterfaceActionKind)
+	return finalizeCodeAction(refactorContext.LS, changeTracker, file, name, title, extractToInterfaceActionKind)
 }
 
 func newExtractedTypeName(changeTracker *change.Tracker, file *ast.SourceFile) *ast.Node {
@@ -171,7 +172,7 @@ func replaceSelectionWithTypeReference(changeTracker *change.Tracker, file *ast.
 	changeTracker.ReplaceRange(file, rng, typeRef, change.NodeOptions{LeadingTriviaOption: change.LeadingTriviaOptionExclude, TrailingTriviaOption: change.TrailingTriviaOptionExclude})
 }
 
-func finalizeCodeAction(changeTracker *change.Tracker, file *ast.SourceFile, title string, kind lsproto.CodeActionKind) *CodeAction {
+func finalizeCodeAction(l *LanguageService, changeTracker *change.Tracker, file *ast.SourceFile, name *ast.Node, title string, kind lsproto.CodeActionKind) *CodeAction {
 	changes := changeTracker.GetChanges()
 	if len(changes) == 0 {
 		return nil
@@ -182,12 +183,30 @@ func finalizeCodeAction(changeTracker *change.Tracker, file *ast.SourceFile, tit
 		return nil
 	}
 
-	return &CodeAction{
+	action := &CodeAction{
 		Description: title,
 		Changes:     edits,
 		FixID:       "extractType",
 		Kind:        kind,
 	}
+
+	if location := renameLocationForNewName(l, file, edits, name); location >= 0 {
+		action.RenameFilename = file.FileName()
+		action.RenameLocation = location
+	}
+
+	return action
+}
+
+func renameLocationForNewName(l *LanguageService, file *ast.SourceFile, edits []*lsproto.TextEdit, name *ast.Node) int {
+	insertion := edits[0]
+	insertOffset := int(l.converters.LineAndCharacterToPosition(file, insertion.Range.Start))
+	nameOffset := strings.Index(insertion.NewText, name.Text())
+	if nameOffset < 0 {
+		return -1
+	}
+
+	return insertOffset + nameOffset
 }
 
 func getUniqueName(baseName string, file *ast.SourceFile) string {

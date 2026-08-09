@@ -7,11 +7,16 @@ import (
 	"testing"
 
 	"github.com/microsoft/typescript-go/internal/ast"
+	"github.com/microsoft/typescript-go/internal/bundled"
+	"github.com/microsoft/typescript-go/internal/compiler"
 	"github.com/microsoft/typescript-go/internal/core"
 	"github.com/microsoft/typescript-go/internal/ls/lsconv"
 	"github.com/microsoft/typescript-go/internal/ls/lsutil"
 	"github.com/microsoft/typescript-go/internal/lsp/lsproto"
 	"github.com/microsoft/typescript-go/internal/parser"
+	"github.com/microsoft/typescript-go/internal/tsoptions"
+	"github.com/microsoft/typescript-go/internal/vfs/vfstest"
+	"gotest.tools/v3/assert"
 )
 
 func TestConvertRefactorToLSPCodeAction_Rename(t *testing.T) {
@@ -128,6 +133,61 @@ func TestConvertRefactorToLSPCodeAction_Disabled(t *testing.T) {
 	case codeAction.Command != nil:
 		t.Errorf("expected no rename command for a disabled action, got %v", codeAction.Command)
 	}
+}
+
+func TestGetExtractTypeCodeActions_AttachesRename(t *testing.T) {
+	t.Parallel()
+
+	content := "var x: { a: number } = { a: 1 };\n"
+
+	fs := vfstest.FromMap(map[string]string{
+		"/index.ts":      content,
+		"/tsconfig.json": `{ "compilerOptions": {}, "files": ["index.ts"] }`,
+	}, false /*useCaseSensitiveFileNames*/)
+	fs = bundled.WrapFS(fs)
+
+	host := compiler.NewCompilerHost("/", fs, bundled.LibPath(), nil, nil)
+	parsed, errors := tsoptions.GetParsedCommandLineOfConfigFile("/tsconfig.json", &core.CompilerOptions{}, nil, host, nil)
+
+	assert.Equal(t, len(errors), 0)
+
+	program := compiler.NewProgram(compiler.ProgramOptions{Config: parsed, Host: host})
+	program.BindSourceFiles()
+
+	sourceFile := program.GetSourceFile("/index.ts")
+	converters := lsconv.NewConverters(lsproto.PositionEncodingKindUTF8, func(_ string) *lsconv.LSPLineMap {
+		return lsconv.ComputeLSPLineStarts(content)
+	})
+	l := &LanguageService{program: program, converters: converters}
+
+	start := strings.Index(content, "{ a: number }")
+	assert.Assert(t, start >= 0)
+
+	refactorContext := &RefactorContext{
+		SourceFile: sourceFile,
+		Range:      core.NewTextRange(start, start+len("{ a: number }")),
+		Program:    program,
+		LS:         l,
+	}
+	actions, err := getExtractTypeCodeActions(context.Background(), refactorContext, "extractType")
+	assert.NilError(t, err)
+
+	var alias *CodeAction
+
+	for _, a := range actions {
+		if a.Kind == extractToTypeAliasActionKind {
+			alias = a
+			break
+		}
+	}
+
+	assert.Assert(t, alias != nil)
+	assert.Equal(t, alias.RenameFilename, "/index.ts")
+
+	postEditText := applyTextEdits(sourceFile, alias.Changes, l)
+	expectedLocation := strings.Index(postEditText, "NewType")
+	assert.Assert(t, expectedLocation >= 0, "new type name not found in post-edit text: %s", postEditText)
+	assert.Equal(t, alias.RenameLocation, expectedLocation)
 }
 
 var errRefactorFactoryFailed = errors.New("refactor factory failed")

@@ -479,6 +479,9 @@ func GetDefaultCapabilities() *lsproto.ClientCapabilities {
 			HoverVerbosityLevel: ptrTrue,
 		},
 		TextDocument: &lsproto.TextDocumentClientCapabilities{
+			CodeAction: &lsproto.CodeActionClientCapabilities{
+				DisabledSupport: ptrTrue,
+			},
 			Completion: &lsproto.CompletionClientCapabilities{
 				CompletionItem: &lsproto.ClientCompletionItemOptions{
 					SnippetSupport:          ptrFalse,
